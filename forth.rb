@@ -129,6 +129,27 @@ end
 
 
 #-------------------------------------------------------------------------------
+class ForthDoLoop
+    attr_accessor :begin
+    attr_accessor :end
+    attr_accessor :index
+    def initialize(_body)
+        @_body = _body
+        @index = 0
+        @begin = nil
+        @end = nil
+    end
+    def to_s
+        "ForthDoLoop: BODY: #{@_body.map { |t| t.to_s }} BEGIN: #{@begin} END: #{@end}"
+    end
+    def body_tokens
+        @_body
+    end
+end
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
 class ForthWord
     def initialize word
         @word = word
@@ -350,6 +371,15 @@ class ForthStack
             @stack.pop != 0
         end
     end
+
+    def pop
+        @stack.pop
+    end
+
+    def push x
+        @stack.push x
+    end
+
 end
 #-------------------------------------------------------------------------------
 
@@ -363,7 +393,7 @@ class ForthInterpreter
         "-" => :subtract,
         "*" => :multiply,
         "/" => :divide,
-        "mod" => :modulo,
+        "MOD" => :modulo,
         "." => :pop_print,
         "DUP" => :duplicate,
         "SWAP" => :swap,
@@ -396,6 +426,18 @@ class ForthInterpreter
         @user_word_buffer = []
         @semantic_tokens = semantic_parse(@syntax_tokens)
         @semantic_tokens = parse_conditionals(@semantic_tokens)
+        @current_do_loop = []
+        # print out all tokens
+        puts "Program Tokens:"
+        @semantic_tokens.each do |token|
+            if token.class == ForthUserWord
+                puts "User Word: #{token.word}\n---\n#{USER_WORDS[token.word].map {|t| t.to_s}.join("\n")}\n---"
+            else
+                puts token.to_s
+            end
+        end
+        puts
+        puts "Program Output:"
         run(@semantic_tokens)
     end
 
@@ -476,6 +518,15 @@ class ForthInterpreter
             elsif token.upcase == "UNTIL"
                 sem_tok.push("UNTIL")
                 next
+            elsif token.upcase == "DO"
+                sem_tok.push("DO")
+                next
+            elsif token.upcase == "LOOP"
+                sem_tok.push("LOOP")
+                next
+            elsif token.upcase == "I"
+                sem_tok.push("I")
+                next
             elsif WORDS.has_key?(token.upcase) # built-in word
                 sem_tok.push(ForthWord.new(token.upcase))
                 next
@@ -492,31 +543,119 @@ class ForthInterpreter
         return sem_tok
     end
 
-    def build_begin_until(program_tokens, i)
+    def build_loops(program_tokens, i)
         body = []
-        i += 1
         token = program_tokens[i]
-    
-        while token != "UNTIL"
-            if token.class == ForthEOC # Skip internal EOCs
-                i += 1
-                token = program_tokens[i]
-                next
-            end
-            if token == "BEGIN"
-                j, begin_until = build_begin_until(program_tokens, i)
-                i = j
-                body.push(begin_until)
-                i += 1
-                next
-            end
-            body.push(token)
+        if token == "BEGIN"
             i += 1
             token = program_tokens[i]
+            while token != "UNTIL"
+                if token.class == ForthEOC # Skip internal EOCs
+                    i += 1
+                    token = program_tokens[i]
+                    next
+                end
+                if token == "BEGIN"
+                    j, begin_until = build_loops(program_tokens, i)
+                    i = j
+                    body.push(begin_until)
+                    i += 1
+                    next
+                elsif token == "DO"
+                    j, do_loop = build_loops(program_tokens, i)
+                    i = j
+                    body.push(do_loop)
+                    i += 1
+                    next
+                end
+                body.push(token)
+                i += 1
+                token = program_tokens[i]
+            end
+        
+            return i, ForthBeginUntil.new(body)
+        
+        elsif token == "DO"
+            i += 1
+            token = program_tokens[i]
+            while token != "LOOP"
+                if token.class == ForthEOC # Skip internal EOCs
+                    i += 1
+                    token = program_tokens[i]
+                    next
+                end
+                if token == "DO"
+                    j, begin_until = build_loops(program_tokens, i)
+                    i = j
+                    body.push(begin_until)
+                    i += 1
+                    next
+                elsif token == "BEGIN"
+                    j, do_loop = build_loops(program_tokens, i)
+                    i = j
+                    body.push(do_loop)
+                    i += 1
+                    next
+                end
+                body.push(token)
+                i += 1
+                token = program_tokens[i]
+            end
+
+            return i, ForthDoLoop.new(body)
+
         end
-    
-        return i, ForthBeginUntil.new(body)
     end
+
+    # def build_do_loop(program_tokens, i)
+    #     body = []
+    #     i += 1
+    #     token = program_tokens[i]
+
+    #     while token != "LOOP"
+    #         if token.class == ForthEOC # Skip internal EOCs
+    #             i += 1
+    #             token = program_tokens[i]
+    #             next
+    #         end
+    #         if token == "BEGIN"
+    #             j, do_loop = build_do_loop(program_tokens, i)
+    #             i = j
+    #             body.push(do_loop)
+    #             i += 1
+    #             next
+    #         end
+    #         body.push(token)
+    #         i += 1
+    #         token = program_tokens[i]
+    #     end
+    # end
+
+    # def build_begin_until(program_tokens, i)
+    #     body = []
+    #     i += 1
+    #     token = program_tokens[i]
+    
+    #     while token != "UNTIL"
+    #         if token.class == ForthEOC # Skip internal EOCs
+    #             i += 1
+    #             token = program_tokens[i]
+    #             next
+    #         end
+    #         if token == "BEGIN"
+    #             j, begin_until = build_begin_until(program_tokens, i)
+    #             i = j
+    #             body.push(begin_until)
+    #             i += 1
+    #             next
+    #         end
+    #         body.push(token)
+    #         i += 1
+    #         token = program_tokens[i]
+    #     end
+    
+    #     return i, ForthBeginUntil.new(body)
+    # end
 
     def build_conditional(program_tokens, i)
         # Given a sequence of tokens ending starting with IF
@@ -584,10 +723,10 @@ class ForthInterpreter
                 j, conditional = build_conditional(program_tokens, i)
                 i = j
                 tokens.push(conditional)
-            elsif token == "BEGIN"
-                j, begin_until = build_begin_until(program_tokens, i)
+            elsif token == "BEGIN" || token == "DO"
+                j, loop_obj = build_loops(program_tokens, i)
                 i = j
-                tokens.push(begin_until)
+                tokens.push(loop_obj)
             else
                 tokens.push(token)
             end
@@ -601,32 +740,53 @@ class ForthInterpreter
         begin
             count = program_tokens.length
             i = 0
-            # program_tokens.each do |token|
-            while i < count
-                token = program_tokens[i]
+            program_tokens.each do |token|
+            # while i < count
+            #     token = program_tokens[i]
 
+                # BEGIN ... UNTIL loop
                 if token.class == ForthBeginUntil
                     loop do
                         run(token.body_tokens)
                         break if @stack.top_nonzero?
                     end
-                    i += 1
+                    # i += 1
                     next
                 end
 
-                # Recusrively handle ForthConditionals
+                # DO ... LOOP loop
+                if token.class == ForthDoLoop
+                    loop_begin = @stack.pop
+                    loop_end = @stack.pop
+                    token.begin = loop_begin
+                    token.end = loop_end
+                    token.index = loop_begin
+                    @current_do_loop.push(token)
+                    loop do
+                        run(token.body_tokens)
+                        @current_do_loop.last.index += 1
+                        break if @current_do_loop.last.index == loop_end
+                    end
+                    @current_do_loop.pop
+                    # i += 1
+                    next
+                end
+
+                # IF (ELSE) THEN block
                 if token.class == ForthConditional
                     if @stack.top_nonzero?
                         run(token.if_tokens)
                     else
+                        # ELSE tokens might just be []
+                        # then this call has no effect
                         run(token.else_tokens)
                     end
-                    i += 1
+                    # i += 1
                     next
                 end
                 
                 # Evaluate the current token as a built-in word, 
-                # integer, or string or as a user-defined word
+                # integer, string, or as a user-defined word
                 if token.class == ForthInteger
                     @stack.push(token.value)
                 elsif token.class == ForthString
@@ -634,9 +794,9 @@ class ForthInterpreter
                 elsif token.class == ForthWord
                     evaluate_builtin(token.word)
                 elsif token.class == ForthUserWord
-                    # Parse the conditionals in the user-defined word tokens
-                    # and then run the tokens
                     evaluate_userword(token.word)
+                elsif token == "I"
+                    @stack.push(@current_do_loop.last.index)
                 elsif token.class == ForthEOC
                     if @out.trailing_space?
                         @out._puts "ok"
@@ -647,16 +807,14 @@ class ForthInterpreter
                     raise "unknown token: #{token}"
                 end
 
-                i += 1
+                # i += 1
 
             end
         rescue => exception
             @out._puts "error: #{exception}"
         end
     end
-
 end
-
 #-------------------------------------------------------------------------------
 
 forth_program = ARGF.read
