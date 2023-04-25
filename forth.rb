@@ -2,10 +2,8 @@
 # CSC 330, Spring 2023
 # Sean McAuliffe, V00913346
 
-# This is a simple Forth interpreter. It reads in a file from standard input
-# and executes it. The indended use is:
-# ruby forth.rb < sample_program.fth
 
+#-------------------------------------------------------------------------------
 class SyntaxParser
     def initialize program
         @program = program
@@ -46,7 +44,10 @@ class SyntaxParser
         @tokens
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthEOC
     # End of command token
     def initialize
@@ -64,7 +65,10 @@ class ForthEOC
         false
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class Printer
     # This class helps format the expected 'ok' token correctly,
     # as seen in the assignment specification example output.
@@ -86,14 +90,18 @@ class Printer
         @last_char == ' ' || @last_char == "\n" || @last_char == nil
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthConditional
     def initialize(_if, _else)
         @_if = _if
         @_else = _else
     end
     def to_s
-        "ForthConditional: IF: #{@_if.map { |t| t.to_s }.join(', ')} \nELSE: #{@_else.map { |t| t.to_s }.join(', ')}"
+        "ForthConditional: IF: #{@_if.map { |t| t.to_s }.join(', ')} \
+         \nELSE: #{@_else.map { |t| t.to_s }.join(', ')}"
     end
     def if_tokens
         @_if
@@ -102,7 +110,25 @@ class ForthConditional
         @_else
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
+class ForthBeginUntil
+    def initialize(_body)
+        @_body = _body
+    end
+    def to_s
+        "ForthBeginUntil: BEGIN: #{@_begin.map { |t| t.to_s }.join(', ')}"
+    end
+    def body_tokens
+        @_body
+    end
+end
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
 class ForthWord
     def initialize word
         @word = word
@@ -114,20 +140,25 @@ class ForthWord
         "ForthWord: #{@word}"
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthUserWord
     def initialize word
         @word = word.to_s
-        #@code = token_list[1..-1]
     end
     def to_s
-        "ForthUserWord: #{@word}"# #{@code.map { |x| x.to_s }} " 
+        "ForthUserWord: #{@word}"
     end
     def word 
         @word.upcase
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthValue
 end
 
@@ -160,7 +191,10 @@ class ForthString < ForthValue
         "ForthString: #{@str.to_s}"
     end
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthStack
     
     def initialize(out)
@@ -316,14 +350,11 @@ class ForthStack
             @stack.pop != 0
         end
     end
-
-    def TOS
-        x = @stack.last
-        x
-    end
-
 end
+#-------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------
 class ForthInterpreter
 
     # Immutable hash of built-in words.
@@ -352,34 +383,19 @@ class ForthInterpreter
     }.freeze
 
     # Hash of user-defined words. Defined in the
-    # Forth program indicated by the : and ; words
+    # Forth program indicated by : and ; 
     USER_WORDS = {}
 
     def initialize(tokens)
         @syntax_tokens = tokens
-        @semantic_tokens = []
         @out = Printer.new
         @stack = ForthStack.new(@out)
-        @string_flag = false # are we in a string
+        @string_flag = false
         @string_buffer = "" 
-        @in_condition_block = false # are we in an if block
-        @condition = true # go ahead and execute the block
-        @user_word_buffer = []
         @user_word_flag = false
-        #puts @tokens
+        @user_word_buffer = []
         @semantic_tokens = semantic_parse(@syntax_tokens)
         @semantic_tokens = parse_conditionals(@semantic_tokens)
-        #puts
-        # puts "Program Tokens:"
-        # @semantic_tokens.each do |token|
-        #     if token.class == ForthUserWord
-        #         puts "ForthUserWord: #{token.word} \n---\n#{USER_WORDS[token.word].map {|t| t.to_s}.join("\n")} \n---"
-        #     else
-        #         puts token
-        #     end
-        # end
-        # puts
-        #puts "Program Output:"
         run(@semantic_tokens)
     end
 
@@ -454,6 +470,12 @@ class ForthInterpreter
             elsif token.upcase == "THEN"
                 sem_tok.push("THEN")
                 next
+            elsif token.upcase == "BEGIN"
+                sem_tok.push("BEGIN")
+                next
+            elsif token.upcase == "UNTIL"
+                sem_tok.push("UNTIL")
+                next
             elsif WORDS.has_key?(token.upcase) # built-in word
                 sem_tok.push(ForthWord.new(token.upcase))
                 next
@@ -470,19 +492,45 @@ class ForthInterpreter
         return sem_tok
     end
 
+    def build_begin_until(program_tokens, i)
+        body = []
+        i += 1
+        token = program_tokens[i]
+    
+        while token != "UNTIL"
+            if token.class == ForthEOC # Skip internal EOCs
+                i += 1
+                token = program_tokens[i]
+                next
+            end
+            if token == "BEGIN"
+                j, begin_until = build_begin_until(program_tokens, i)
+                i = j
+                body.push(begin_until)
+                i += 1
+                next
+            end
+            body.push(token)
+            i += 1
+            token = program_tokens[i]
+        end
+    
+        return i, ForthBeginUntil.new(body)
+    end
+
     def build_conditional(program_tokens, i)
         # Given a sequence of tokens ending starting with IF
-        # Find all of the tokens between IF and ELSE, and ELSE and THEN
-        # Build a conditional object
+        # Find all of the tokens between IF (and possibly ELSE) and THEN
         # If either IF, or ELSE block contains another IF, then recurse
-        # to build the conditional object for that block
+        # to build the conditional object contained in either branch
         _if = []
         _else = []
         i += 1
         token = program_tokens[i]
 
+        # Build the IF block
         while token != "THEN" && token != "ELSE"
-            if token.class == ForthEOC
+            if token.class == ForthEOC # Skip internal EOCs
                 i += 1
                 token = program_tokens[i]
                 next
@@ -499,16 +547,16 @@ class ForthInterpreter
             token = program_tokens[i]
         end
 
+        # Build the ELSE block
         if token == "ELSE"
             i += 1
             token = program_tokens[i]
             while token != "THEN"
-                if token.class == ForthEOC
+                if token.class == ForthEOC # Skip internal EOCs
                     i += 1
                     token = program_tokens[i]
                     next
                 end
-
                 if token == "IF"
                     j, conditional = build_conditional(program_tokens, i)
                     i = j
@@ -525,7 +573,7 @@ class ForthInterpreter
     end
 
     def parse_conditionals(program_tokens)
-        # Recursively find any IF statements in the program
+        # Find all IF statements in the program
         # Build a ForthConditional object for each
         tokens = []
         i = 0
@@ -536,6 +584,10 @@ class ForthInterpreter
                 j, conditional = build_conditional(program_tokens, i)
                 i = j
                 tokens.push(conditional)
+            elsif token == "BEGIN"
+                j, begin_until = build_begin_until(program_tokens, i)
+                i = j
+                tokens.push(begin_until)
             else
                 tokens.push(token)
             end
@@ -552,6 +604,15 @@ class ForthInterpreter
             # program_tokens.each do |token|
             while i < count
                 token = program_tokens[i]
+
+                if token.class == ForthBeginUntil
+                    loop do
+                        run(token.body_tokens)
+                        break if @stack.top_nonzero?
+                    end
+                    i += 1
+                    next
+                end
 
                 # Recusrively handle ForthConditionals
                 if token.class == ForthConditional
@@ -587,14 +648,17 @@ class ForthInterpreter
                 end
 
                 i += 1
+
             end
-            rescue => exception
-                @out._puts "error: #{exception}"
-            end
+        rescue => exception
+            @out._puts "error: #{exception}"
+        end
     end
+
 end
 
-# Create a new ForthInterpreter and run it
+#-------------------------------------------------------------------------------
+
 forth_program = ARGF.read
 parser = SyntaxParser.new(forth_program)
 interpreter = ForthInterpreter.new(parser.tokens)
