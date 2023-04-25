@@ -24,5 +24,17 @@ ruby forth.rb < programs/basic.fth
 ```
 It is expected that you provide the location of a Forth program file as input to the interpreter. The interpreter will then execute the program, and print the result to standard output.
 
-You cannot provide Forth commands directly to the interpreter via piping. You must provide a Forth program file as input.
+Alternatively you can run the interpreter without providing a Forth program file,
+and instead type the program directly into the interpreter. For example:
+
+```bash
+ruby forth.rb
+1 2 + .
+CTRL-D
+3
+```
+
+There is no REPL behaviour implemented, so you must provide the entire program
+at once, and then signify the end-of-input with CTRL-D.
+
 

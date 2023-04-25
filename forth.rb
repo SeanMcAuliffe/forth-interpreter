@@ -87,10 +87,19 @@ class Printer
     end
 end
 
-class ConditionalBlock
+class ForthConditional
     def initialize(_if, _else)
         @_if = _if
         @_else = _else
+    end
+    def to_s
+        "ForthConditional: IF: #{@_if.map { |t| t.to_s }.join(', ')} \nELSE: #{@_else.map { |t| t.to_s }.join(', ')}"
+    end
+    def if_tokens
+        @_if
+    end
+    def else_tokens
+        @_else
     end
 end
 
@@ -301,7 +310,16 @@ class ForthStack
     end
 
     def top_nonzero?
-        @stack[-1] != 0
+        if @stack.length == 0
+            false
+        else
+            @stack.pop != 0
+        end
+    end
+
+    def TOS
+        x = @stack.last
+        x
     end
 
 end
@@ -350,10 +368,18 @@ class ForthInterpreter
         @user_word_flag = false
         #puts @tokens
         @semantic_tokens = semantic_parse(@syntax_tokens)
-        puts "Program Tokens:"
-        puts @semantic_tokens
-        puts
-        puts "Program Output:"
+        @semantic_tokens = parse_conditionals(@semantic_tokens)
+        #puts
+        # puts "Program Tokens:"
+        # @semantic_tokens.each do |token|
+        #     if token.class == ForthUserWord
+        #         puts "ForthUserWord: #{token.word} \n---\n#{USER_WORDS[token.word].map {|t| t.to_s}.join("\n")} \n---"
+        #     else
+        #         puts token
+        #     end
+        # end
+        # puts
+        #puts "Program Output:"
         run(@semantic_tokens)
     end
 
@@ -380,11 +406,34 @@ class ForthInterpreter
     # Recursive Semantic Parser
     # Transform Tokens -> Forth values and control structures
     def semantic_parse(syntax_tokens)
+        if_flag = false
+        if_tokens = []
+        else_flag = false
+        else_tokens = []
+        in_conditional = false
         sem_tok = []
         syntax_tokens.each do |token|
-            if token.start_with? ".\"" # start of string
+            if token == ":" # start of user-defined word
+                @user_word_buffer = []
+                @user_word_flag = true
+                next
+            elsif @user_word_flag # in user-defined word
+                if token == ";" # end of user-defined word
+                    @user_word_flag = false
+                    new_word = ForthUserWord.new(@user_word_buffer[0].upcase)
+                    USER_WORDS[new_word.word] = []
+                    # Parse the tokens of the user-defined word
+                    user_word_tokens = semantic_parse(@user_word_buffer)
+                    user_word_tokens = parse_conditionals(user_word_tokens)
+                    user_word_tokens = user_word_tokens.reject {|t| t.class == ForthEOC}
+                    USER_WORDS[new_word.word] = user_word_tokens[1..-1]
+                    next
+                end
+                @user_word_buffer.push(token)
+                next
+            elsif token.start_with? ".\"" # start of string
                 @string_flag = true
-                #@string_buffer += token[2..-1] + " "
+                #@string_buffer += token[2..-1] + " " #TODO: Check length and do conditionally
                 next
             elsif @string_flag 
                 if token.end_with? "\"" # end of string
@@ -396,35 +445,20 @@ class ForthInterpreter
                 end
                 @string_buffer += token + " "
                 next
-            elsif token == ":" # start of user-defined word
-                @user_word_buffer = []
-                @user_word_flag = true
-                next
-            elsif @user_word_flag # in user-defined word
-                if token == ";" # end of user-defined word
-                    @user_word_flag = false
-                    new_word = ForthUserWord.new(@user_word_buffer[0].upcase)
-                    USER_WORDS[new_word.word] = []
-                    user_word_tokens = semantic_parse(@user_word_buffer)
-                    USER_WORDS[new_word.word] = user_word_tokens[1..-1]
-                    next
-                end
-                @user_word_buffer.push(token)
-                next
-            elsif token == "IF" # start of if block
+            elsif token.upcase == "IF"
                 sem_tok.push("IF")
                 next
-            elsif token == "ELSE" # else block
+            elsif token.upcase == "ELSE"
                 sem_tok.push("ELSE")
                 next
-            elsif token == "THEN" # end of if block
+            elsif token.upcase == "THEN"
                 sem_tok.push("THEN")
                 next
             elsif WORDS.has_key?(token.upcase) # built-in word
                 sem_tok.push(ForthWord.new(token.upcase))
                 next
             elsif token.class == ForthEOC
-                sem_tok.push(ForthEOC.new)
+                sem_tok.push(ForthEOC.new) unless @user_word_flag
             elsif token.to_i.to_s == token # integer
                 sem_tok.push(ForthInteger.new(token.to_i))
             elsif USER_WORDS.has_key?(token.upcase)
@@ -436,35 +470,127 @@ class ForthInterpreter
         return sem_tok
     end
 
+    def build_conditional(program_tokens, i)
+        # Given a sequence of tokens ending starting with IF
+        # Find all of the tokens between IF and ELSE, and ELSE and THEN
+        # Build a conditional object
+        # If either IF, or ELSE block contains another IF, then recurse
+        # to build the conditional object for that block
+        _if = []
+        _else = []
+        i += 1
+        token = program_tokens[i]
+
+        while token != "THEN" && token != "ELSE"
+            if token.class == ForthEOC
+                i += 1
+                token = program_tokens[i]
+                next
+            end
+            if token == "IF"
+                j, conditional = build_conditional(program_tokens, i)
+                i = j
+                _if.push(conditional)
+                i += 1
+                next
+            end
+            _if.push(token)
+            i += 1
+            token = program_tokens[i]
+        end
+
+        if token == "ELSE"
+            i += 1
+            token = program_tokens[i]
+            while token != "THEN"
+                if token.class == ForthEOC
+                    i += 1
+                    token = program_tokens[i]
+                    next
+                end
+
+                if token == "IF"
+                    j, conditional = build_conditional(program_tokens, i)
+                    i = j
+                    _else.push(conditional)
+                else
+                    _else.push(token)
+                end
+                i += 1
+                token = program_tokens[i]
+            end
+        end
+
+        return i, ForthConditional.new(_if, _else)
+    end
+
+    def parse_conditionals(program_tokens)
+        # Recursively find any IF statements in the program
+        # Build a ForthConditional object for each
+        tokens = []
+        i = 0
+        l = program_tokens.length
+        while i < l
+            token = program_tokens[i]
+            if token == "IF"
+                j, conditional = build_conditional(program_tokens, i)
+                i = j
+                tokens.push(conditional)
+            else
+                tokens.push(token)
+            end
+            i += 1
+        end
+        return tokens
+    end
+
+
     def run(program_tokens)
         begin
-            program_tokens.each do |token|
-                if token.class == ForthEOC
+            count = program_tokens.length
+            i = 0
+            # program_tokens.each do |token|
+            while i < count
+                token = program_tokens[i]
+
+                # Recusrively handle ForthConditionals
+                if token.class == ForthConditional
+                    if @stack.top_nonzero?
+                        run(token.if_tokens)
+                    else
+                        run(token.else_tokens)
+                    end
+                    i += 1
+                    next
+                end
+                
+                # Evaluate the current token as a built-in word, 
+                # integer, or string or as a user-defined word
+                if token.class == ForthInteger
+                    @stack.push(token.value)
+                elsif token.class == ForthString
+                    @out._print token.str
+                elsif token.class == ForthWord
+                    evaluate_builtin(token.word)
+                elsif token.class == ForthUserWord
+                    # Parse the conditionals in the user-defined word tokens
+                    # and then run the tokens
+                    evaluate_userword(token.word)
+                elsif token.class == ForthEOC
                     if @out.trailing_space?
                         @out._puts "ok"
                     else
                         @out._puts " ok"
                     end
-                elsif token.class == ForthWord
-                    evaluate_builtin(token.word)
-                elsif token.class == ForthInteger
-                    @stack.push(token.value)
-                elsif token.class == ForthString
-                    print token.str
-                elsif token.class == ForthUserWord
-                    evaluate_userword(token.word)
-                # elsif token == "IF"
-                #     @in_condition_block = true
-                #     @condition = @stack.top_nonzero?
-                # elsif token == "THEN"
-                #     @in_condition_block = false
-                # elsif token == "ELSE"
-                #     @condition = !@condition
+                else
+                    raise "unknown token: #{token}"
                 end
+
+                i += 1
             end
-        rescue => exception
-            @out._puts "error: #{exception}"
-        end
+            rescue => exception
+                @out._puts "error: #{exception}"
+            end
     end
 end
 
