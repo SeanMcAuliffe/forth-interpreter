@@ -42,3 +42,19 @@ comment )
 ok
 120 ok
 ```
+
+# The following Forth features have been implemented
+- Stack manipulation via builtin words
+- Integer and string literals
+- User defined words
+- Recursive user defined words
+- Recursive (nested) control structures
+    - IF ELSE THEN
+    - BEGIN UNTIL
+    - DO LOOP
+    - Comments
+    - Heap Variables
+
+# The following Forth features have not been implemented
+- Constants
+- Memory allocation via ALLOT

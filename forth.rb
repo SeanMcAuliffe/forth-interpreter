@@ -67,9 +67,9 @@
 #       - BEGIN UNTIL
 #       - DO LOOP
 #   - Comments
+#   - Heap Variables
 
 # The following Forth features have not been implemented
-#   - Heap Variables
 #   - Constants
 #   - Memory allocation via ALLOT
 
@@ -169,7 +169,7 @@ class ForthConditional
         @if_tokens = _if
         @else_tokens = _else
     end
-    
+
     def to_s
         "ForthConditional: IF: #{@if_tokens.map { |t| t.to_s }.join(', ')} \
          \nELSE: #{@else_tokens.map { |t| t.to_s }.join(', ')}"
@@ -434,6 +434,63 @@ end
 
 
 #-------------------------------------------------------------------------------
+# class ForthVariable
+#     attr_reader :name
+#     attr_accessor :value
+#     attr_accessor :address
+#     def initialize (name)
+#         @name = name
+#         @value = nil
+#         @address = nil
+#     end
+# end
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+class ForthHeap
+    def initialize
+        @address = 1000
+        @heap = {}
+    end
+    def add varname
+        @heap[varname.upcase] = [0, @address]
+        @address += 1
+    end
+    def update_value varname, value
+        @heap[varname.upcase][0] = value
+    end
+    def get_value varname
+        @heap[varname.upcase][0]
+    end
+    def exists varname
+        if varname.class != String
+            false
+        else
+            @heap.has_key? varname.upcase
+        end
+    end
+    def address_of_var varname
+        @heap[varname.upcase][1]
+    end
+    def var_at_address(address)
+        @heap.each do |key, value|
+            if value[1] == address
+                return key
+            end
+        end
+        return nil
+    end
+    def dump
+        @heap.each do |key, value|
+            puts "#{key} => #{value}"
+        end
+    end
+end  
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
 class ForthInterpreter
 
     # Immutable hash of built-in words.
@@ -468,6 +525,8 @@ class ForthInterpreter
     def initialize(tokens)
         @out = Printer.new
         @stack = ForthStack.new(@out)
+        @heap = ForthHeap.new
+        @operating_var = nil
         @string_flag = false
         @string_buffer = "" 
         @user_word_flag = false
@@ -565,6 +624,25 @@ class ForthInterpreter
             elsif token.upcase == "I"
                 semantic_tokens.push("I")
                 next
+
+            # Variables
+            elsif token == "VARIABLE"
+                # Grab the next token as the variable name
+                variable_name = syntax_tokens[syntax_tokens.index(token) + 1]
+                # Delete the next token
+                syntax_tokens.delete_at(syntax_tokens.index(token) + 1)
+                # Add the variable to the heap
+                @heap.add(variable_name.upcase)
+                next
+            elsif @heap.exists token
+                semantic_tokens.push(token.upcase)
+                next
+            elsif token == "!"
+                semantic_tokens.push("!")
+                next
+            elsif token == "@"
+                semantic_tokens.push("@")
+                next 
 
             # Words / Values
             elsif WORDS.has_key?(token.upcase) # built-in word
@@ -769,6 +847,24 @@ class ForthInterpreter
                         # then this call has no effect
                         run(token.else_tokens)
                     end
+                    next
+                end
+
+                # Variables
+                if @heap.exists token
+                    @operating_var = token
+                    next
+                end
+
+                if token == "!"
+                    @heap.update_value(@operating_var, @stack.pop)
+                    @operating_var = nil
+                    next
+                end
+
+                if token == "@"
+                    @stack.push(@heap.get_value(@operating_var))
+                    @operating_var = nil
                     next
                 end
                 
