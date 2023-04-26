@@ -2,9 +2,82 @@
 # CSC 330, Spring 2023
 # Sean McAuliffe, V00913346
 
+# This is a simple interpreter for a subset of the Forth programming language.
+# The intended use is to run the program from the command line, piping a Forth
+# program file (.fth) into the interpreter. For example:
+# ruby forth.rb < test.fth
+
+# The Forth program file should contain nothing other than valid Forth words
+# integers, strings, control structures, and comments.
+
+# There is no interactive REPL-like behaviour implemented, i.e. simply running
+# the interpreter without a program file will not allow the user to enter
+# Forth commands directly (see README for usage instructions).
+
+# The interpreter will print the output of the program to the console, for each
+# "line" of input (multiline control structures will be treated as one line)
+# the interpreter will evaluate, print the output, followed by an "ok" token.
+
+# The interpreter will also print any errors to the console if they occur
+# during the execution of the program. Some errors will not lead to program
+# termination, and will only effect the current line of execution.
+
+# The interpreter is implemented across the following classes:
+#   - ForthInterpreter
+#   - ForthStack
+#   - SyntaxParser
+#   - ForthEOC
+
+# The following classes are utilities
+#   - Printer
+
+# The following classes are used to represent Forth values and control structures
+#   - ForthConditional
+#   - ForthBeginUntil
+#   - ForthDoLoop
+#   - ForthWord
+#   - ForthUserWord
+#   - ForthInteger
+#   - ForthString
+
+# The hash of builtin words is stored immutably inside the interpreter
+# which also contains a mutable hash of user defined words.
+
+# The interpreter does several passes of pre-processing / parsing before
+# executing the program. The first pass (Syntactic Parsing) is to tokenize
+# the program, removing # comments and splitting the program into a list of
+# tokens. The second pass (semantic parsing) is to parse the tokens into
+# Forth control structures and values. The third pass is to identify condotional
+# and loop structures and create objects to later orchestrate their execution
+# when encountered by the final pass: execution.
+
+# Execution is done by iterating over the list of tokens, and executing each
+# token in turn. Each token either modifies the stack directly (builtins),
+# or recursively invokes a list of tokens which can modify the execution
+# (ifelse, loops, etc.), ultimately, all control-structure tokens evaluate
+# to builtins which are executed on the stack.
+
+# The following Forth features have been implemented
+#   - Stack manipulation via builtin words
+#   - Integer and string literals
+#   - User defined words
+#   - Recursive user defined words
+#   - Recursive (nested) control structures
+#       - IF ELSE THEN
+#       - BEGIN UNTIL
+#       - DO LOOP
+#   - Comments
+
+# The following Forth features have not been implemented
+#   - Heap Variables
+#   - Constants
+#   - Memory allocation via ALLOT
+
 
 #-------------------------------------------------------------------------------
 class SyntaxParser
+    attr_reader :tokens
+
     def initialize program
         @program = program
         @tokens = []
@@ -13,8 +86,6 @@ class SyntaxParser
     end
 
     def tokenize
-        # This method reads in the program and converts it into
-        # a list of tokens with comments removed
         lines = @program.split("\n")
         lines.each do |line|
             tokens = line.split(" ")
@@ -38,10 +109,6 @@ class SyntaxParser
                 comment_flag = false
             end
         end
-    end
-
-    def tokens
-        @tokens
     end
 end
 #-------------------------------------------------------------------------------
@@ -95,19 +162,17 @@ end
 
 #-------------------------------------------------------------------------------
 class ForthConditional
+    attr_reader :if_tokens
+    attr_reader :else_tokens
+
     def initialize(_if, _else)
-        @_if = _if
-        @_else = _else
+        @if_tokens = _if
+        @else_tokens = _else
     end
+    
     def to_s
-        "ForthConditional: IF: #{@_if.map { |t| t.to_s }.join(', ')} \
-         \nELSE: #{@_else.map { |t| t.to_s }.join(', ')}"
-    end
-    def if_tokens
-        @_if
-    end
-    def else_tokens
-        @_else
+        "ForthConditional: IF: #{@if_tokens.map { |t| t.to_s }.join(', ')} \
+         \nELSE: #{@else_tokens.map { |t| t.to_s }.join(', ')}"
     end
 end
 #-------------------------------------------------------------------------------
@@ -115,14 +180,12 @@ end
 
 #-------------------------------------------------------------------------------
 class ForthBeginUntil
+    attr_reader :body_tokens
     def initialize(_body)
-        @_body = _body
+        @body_tokens = _body
     end
     def to_s
-        "ForthBeginUntil: BEGIN: #{@_begin.map { |t| t.to_s }.join(', ')}"
-    end
-    def body_tokens
-        @_body
+        "ForthBeginUntil: BEGIN: #{@body_tokens.map { |t| t.to_s }.join(', ')}"
     end
 end
 #-------------------------------------------------------------------------------
@@ -133,17 +196,16 @@ class ForthDoLoop
     attr_accessor :begin
     attr_accessor :end
     attr_accessor :index
+    attr_reader :body_tokens
+
     def initialize(_body)
-        @_body = _body
+        @body_tokens = _body
         @index = 0
         @begin = nil
         @end = nil
     end
     def to_s
-        "ForthDoLoop: BODY: #{@_body.map { |t| t.to_s }} BEGIN: #{@begin} END: #{@end}"
-    end
-    def body_tokens
-        @_body
+        "ForthDoLoop: #{@body_tokens.map { |t| t.to_s }}"
     end
 end
 #-------------------------------------------------------------------------------
@@ -151,29 +213,24 @@ end
 
 #-------------------------------------------------------------------------------
 class ForthWord
+    attr_reader :word
     def initialize word
-        @word = word
-    end
-    def word
-        @word.upcase
+        @word = word.to_s.upcase
     end
     def to_s
-        "ForthWord: #{@word}"
+        "ForthWord: #{word}"
     end
 end
 #-------------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
-class ForthUserWord
+class ForthUserWord < ForthWord
     def initialize word
-        @word = word.to_s
+        super word
     end
     def to_s
-        "ForthUserWord: #{@word}"
-    end
-    def word 
-        @word.upcase
+        "ForthUserWord: #{word}"
     end
 end
 #-------------------------------------------------------------------------------
@@ -181,35 +238,27 @@ end
 
 #-------------------------------------------------------------------------------
 class ForthValue
+    attr_reader :value
+    def initialize x
+        @value = x
+    end
 end
 
 class ForthInteger < ForthValue
     def initialize value
-        @value = value
-    end
-    def value
-        @value
-    end
-    def value= x
-        @value = x
+        super value
     end
     def to_s
-        "ForthInteger: #{@value.to_s}"
+        "ForthInteger: #{value.to_s}"
     end
 end
 
 class ForthString < ForthValue
     def initialize str
-        @str = str
-    end
-    def str
-        @str
-    end
-    def str= x
-        @str = x
+        @value = str
     end
     def to_s
-        "ForthString: #{@str.to_s}"
+        "ForthString: #{value.to_s}"
     end
 end
 #-------------------------------------------------------------------------------
@@ -417,27 +466,15 @@ class ForthInterpreter
     USER_WORDS = {}
 
     def initialize(tokens)
-        @syntax_tokens = tokens
         @out = Printer.new
         @stack = ForthStack.new(@out)
         @string_flag = false
         @string_buffer = "" 
         @user_word_flag = false
         @user_word_buffer = []
-        @semantic_tokens = semantic_parse(@syntax_tokens)
-        @semantic_tokens = parse_conditionals(@semantic_tokens)
         @current_do_loop = []
-        # print out all tokens
-        puts "Program Tokens:"
-        @semantic_tokens.each do |token|
-            if token.class == ForthUserWord
-                puts "User Word: #{token.word}\n---\n#{USER_WORDS[token.word].map {|t| t.to_s}.join("\n")}\n---"
-            else
-                puts token.to_s
-            end
-        end
-        puts
-        puts "Program Output:"
+        @semantic_tokens = semantic_parse(tokens)
+        @semantic_tokens = parse_conditionals(@semantic_tokens)
         run(@semantic_tokens)
     end
 
@@ -464,17 +501,15 @@ class ForthInterpreter
     # Recursive Semantic Parser
     # Transform Tokens -> Forth values and control structures
     def semantic_parse(syntax_tokens)
-        if_flag = false
-        if_tokens = []
-        else_flag = false
-        else_tokens = []
-        in_conditional = false
-        sem_tok = []
+        semantic_tokens = []
+
         syntax_tokens.each do |token|
+
             if token == ":" # start of user-defined word
                 @user_word_buffer = []
                 @user_word_flag = true
                 next
+
             elsif @user_word_flag # in user-defined word
                 if token == ";" # end of user-defined word
                     @user_word_flag = false
@@ -489,60 +524,69 @@ class ForthInterpreter
                 end
                 @user_word_buffer.push(token)
                 next
+
             elsif token.start_with? ".\"" # start of string
                 @string_flag = true
-                #@string_buffer += token[2..-1] + " " #TODO: Check length and do conditionally
                 next
-            elsif @string_flag 
+
+            elsif @string_flag # in string
                 if token.end_with? "\"" # end of string
                     @string_flag = false
                     @string_buffer += token[0..-2]
-                    sem_tok.push(ForthString.new(@string_buffer))
+                    semantic_tokens.push(ForthString.new(@string_buffer))
                     @string_buffer = ""
                     next
                 end
                 @string_buffer += token + " "
                 next
+
+            # Start of Control Structure Indicators
             elsif token.upcase == "IF"
-                sem_tok.push("IF")
+                semantic_tokens.push("IF")
                 next
             elsif token.upcase == "ELSE"
-                sem_tok.push("ELSE")
+                semantic_tokens.push("ELSE")
                 next
             elsif token.upcase == "THEN"
-                sem_tok.push("THEN")
+                semantic_tokens.push("THEN")
                 next
             elsif token.upcase == "BEGIN"
-                sem_tok.push("BEGIN")
+                semantic_tokens.push("BEGIN")
                 next
             elsif token.upcase == "UNTIL"
-                sem_tok.push("UNTIL")
+                semantic_tokens.push("UNTIL")
                 next
             elsif token.upcase == "DO"
-                sem_tok.push("DO")
+                semantic_tokens.push("DO")
                 next
             elsif token.upcase == "LOOP"
-                sem_tok.push("LOOP")
+                semantic_tokens.push("LOOP")
                 next
             elsif token.upcase == "I"
-                sem_tok.push("I")
+                semantic_tokens.push("I")
                 next
+
+            # Words / Values
             elsif WORDS.has_key?(token.upcase) # built-in word
-                sem_tok.push(ForthWord.new(token.upcase))
+                semantic_tokens.push(ForthWord.new(token.upcase))
+                next
+            elsif USER_WORDS.has_key?(token.upcase)
+                semantic_tokens.push(ForthUserWord.new(token.upcase))
                 next
             elsif token.class == ForthEOC
-                sem_tok.push(ForthEOC.new) unless @user_word_flag
+                semantic_tokens.push(ForthEOC.new) unless @user_word_flag
             elsif token.to_i.to_s == token # integer
-                sem_tok.push(ForthInteger.new(token.to_i))
-            elsif USER_WORDS.has_key?(token.upcase)
-                sem_tok.push(ForthUserWord.new(token.upcase))
+                semantic_tokens.push(ForthInteger.new(token.to_i))
             else 
                 raise "unknown token: #{token}"
             end
+
         end
-        return sem_tok
+        return semantic_tokens
     end
 
+    # Recusrively construct loop structues 
+    # wherever their indicators are found
     def build_loops(program_tokens, i)
         body = []
         token = program_tokens[i]
@@ -607,61 +651,11 @@ class ForthInterpreter
         end
     end
 
-    # def build_do_loop(program_tokens, i)
-    #     body = []
-    #     i += 1
-    #     token = program_tokens[i]
-
-    #     while token != "LOOP"
-    #         if token.class == ForthEOC # Skip internal EOCs
-    #             i += 1
-    #             token = program_tokens[i]
-    #             next
-    #         end
-    #         if token == "BEGIN"
-    #             j, do_loop = build_do_loop(program_tokens, i)
-    #             i = j
-    #             body.push(do_loop)
-    #             i += 1
-    #             next
-    #         end
-    #         body.push(token)
-    #         i += 1
-    #         token = program_tokens[i]
-    #     end
-    # end
-
-    # def build_begin_until(program_tokens, i)
-    #     body = []
-    #     i += 1
-    #     token = program_tokens[i]
-    
-    #     while token != "UNTIL"
-    #         if token.class == ForthEOC # Skip internal EOCs
-    #             i += 1
-    #             token = program_tokens[i]
-    #             next
-    #         end
-    #         if token == "BEGIN"
-    #             j, begin_until = build_begin_until(program_tokens, i)
-    #             i = j
-    #             body.push(begin_until)
-    #             i += 1
-    #             next
-    #         end
-    #         body.push(token)
-    #         i += 1
-    #         token = program_tokens[i]
-    #     end
-    
-    #     return i, ForthBeginUntil.new(body)
-    # end
-
+    # Given a sequence of tokens ending starting with IF
+    # Find all of the tokens between IF (and possibly ELSE) and THEN
+    # If either IF, or ELSE block contains another IF, then recurse
+    # to build the conditional object contained in either branch
     def build_conditional(program_tokens, i)
-        # Given a sequence of tokens ending starting with IF
-        # Find all of the tokens between IF (and possibly ELSE) and THEN
-        # If either IF, or ELSE block contains another IF, then recurse
-        # to build the conditional object contained in either branch
         _if = []
         _else = []
         i += 1
@@ -711,9 +705,9 @@ class ForthInterpreter
         return i, ForthConditional.new(_if, _else)
     end
 
+    # Find all IF statements in the program
+    # Build a ForthConditional object for each
     def parse_conditionals(program_tokens)
-        # Find all IF statements in the program
-        # Build a ForthConditional object for each
         tokens = []
         i = 0
         l = program_tokens.length
@@ -735,14 +729,10 @@ class ForthInterpreter
         return tokens
     end
 
-
     def run(program_tokens)
         begin
             count = program_tokens.length
-            i = 0
             program_tokens.each do |token|
-            # while i < count
-            #     token = program_tokens[i]
 
                 # BEGIN ... UNTIL loop
                 if token.class == ForthBeginUntil
@@ -750,7 +740,6 @@ class ForthInterpreter
                         run(token.body_tokens)
                         break if @stack.top_nonzero?
                     end
-                    # i += 1
                     next
                 end
 
@@ -768,7 +757,6 @@ class ForthInterpreter
                         break if @current_do_loop.last.index == loop_end
                     end
                     @current_do_loop.pop
-                    # i += 1
                     next
                 end
 
@@ -781,7 +769,6 @@ class ForthInterpreter
                         # then this call has no effect
                         run(token.else_tokens)
                     end
-                    # i += 1
                     next
                 end
                 
@@ -790,7 +777,7 @@ class ForthInterpreter
                 if token.class == ForthInteger
                     @stack.push(token.value)
                 elsif token.class == ForthString
-                    @out._print token.str
+                    @out._print token.value
                 elsif token.class == ForthWord
                     evaluate_builtin(token.word)
                 elsif token.class == ForthUserWord
@@ -806,8 +793,6 @@ class ForthInterpreter
                 else
                     raise "unknown token: #{token}"
                 end
-
-                # i += 1
 
             end
         rescue => exception
