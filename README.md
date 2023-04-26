@@ -9,8 +9,8 @@ Languages* at the University of Victoria.
 
 To ensure compatability when evaluating / testing, this interpreter was designed and is intended to be executed on a POSIX system. It is written in Ruby, and is intended to be executed with the Ruby interpreter.
 
-It has been tested with: ruby 3.0.2p107 (2021-07-07 revision 0db68f0233)
-[x86_64-linux-gnu].
+It has been tested with: **ruby 3.0.2p107 (2021-07-07 revision 0db68f0233)
+[x86_64-linux-gnu]**.
 
 ## Usage
 
@@ -25,7 +25,9 @@ ruby forth.rb < programs/basic.fth
 It is expected that you provide the location of a Forth program file as input to the interpreter. The interpreter will then execute the program, and print the result to standard output.
 
 Alternatively you can run the interpreter without providing a Forth program file,
-and instead type the program directly into the interpreter. For example:
+and instead type the program directly into the interpreter. However, 
+**there is no REPL behaviour** implemented, so you must provide the entire program
+at once, and then signify the end-of-input with CTRL-D. For example:
 
 ```bash
 ruby forth.rb
@@ -40,8 +42,3 @@ comment )
 ok
 120 ok
 ```
-
-There is no REPL behaviour implemented, so you must provide the entire program
-at once, and then signify the end-of-input with CTRL-D.
-
-
