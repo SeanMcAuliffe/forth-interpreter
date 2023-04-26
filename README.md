@@ -29,9 +29,16 @@ and instead type the program directly into the interpreter. For example:
 
 ```bash
 ruby forth.rb
-1 2 + .
-CTRL-D
-3
+1 2 + . ( comment )
+9 0 * .
+: faci 1 SWAP 1 + 1 DO I * LOOP ; ( multiline
+comment )
+5 faci .
+<CTRL-D>
+3 ok
+0 ok
+ok
+120 ok
 ```
 
 There is no REPL behaviour implemented, so you must provide the entire program
