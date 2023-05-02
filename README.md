@@ -43,7 +43,7 @@ ok
 120 ok
 ```
 
-# The following Forth features have been implemented
+### The following Forth features have been implemented
 - Stack manipulation via builtin words
 - Integer and string literals
 - User defined words
@@ -55,6 +55,6 @@ ok
     - Comments
     - Heap Variables
 
-# The following Forth features have not been implemented
+### The following Forth features have not been implemented
 - Constants
 - Memory allocation via ALLOT
